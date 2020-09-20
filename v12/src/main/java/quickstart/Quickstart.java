@@ -7,6 +7,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Writer;
+import java.util.Arrays;
 
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
@@ -29,23 +30,39 @@ public class Quickstart {
         return sampleFile;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException
+    {
 
         // Creating a sample file to use in the sample
-        File sampleFile = null;
-        sampleFile = createTempFile();
+        File source = null;
         String downloadedFilePath = "downloadedFile.txt";
+        String blobName = "myblob";
+        if(args.length>0)
+        {
+            source=new File(args[0]);
+            downloadedFilePath="downloaded."+source.getName();
+            blobName=source.getName();
+        }
+        else
+        {
+            source = createTempFile();
+        }
+        String containerName = "mycontainer";
+        if(args.length>2)
+        {
+            containerName=args[1];
+
+
+        }
 
         // Retrieve the credentials and initialize SharedKeyCredentials
         String accountName = System.getenv("AZURE_STORAGE_ACCOUNT");
         String accountKey = System.getenv("AZURE_STORAGE_ACCESS_KEY");
         String endpoint = "https://" + accountName + ".blob.core.windows.net";
-        String containerName = "mycontainer";
-        String blobName = "myblob";
 
         // Create a SharedKeyCredential
         StorageSharedKeyCredential credential = new StorageSharedKeyCredential(accountName, accountKey);
-       
+
         // Create a blobServiceClient
         BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
             .endpoint(endpoint)
@@ -56,8 +73,16 @@ public class Quickstart {
         BlobContainerClient blobContainerClient = blobServiceClient.getBlobContainerClient(containerName);
 
         // Create a container
-        blobServiceClient.createBlobContainer(containerName);
-        System.out.printf("Creating a container : %s %n", blobContainerClient.getBlobContainerUrl());
+        if(!blobContainerClient.exists())
+        {
+            blobServiceClient.createBlobContainer(containerName);
+            System.out.printf("Creating a container : %s %n", blobContainerClient.getBlobContainerUrl());
+        }
+        else
+        {
+            System.out.printf("Container already exists : %s %n", blobContainerClient.getBlobContainerUrl());
+
+        }
 
         // Create a BlobClient to run operations on Blobs
         BlobClient blobClient = blobContainerClient.getBlobClient(blobName);
@@ -77,7 +102,12 @@ public class Quickstart {
             case "U":
                 System.out.println("Uploading the sample file into the container from a file: "
                         + blobContainerClient.getBlobContainerUrl());
-                blobClient.uploadFromFile(sampleFile.toPath().toString());
+            {
+                long start = System.currentTimeMillis();
+                uploadFilePath(source, blobContainerClient);
+                System.out.println("Time spent uploading: "+source+ ": "+(System.currentTimeMillis()-start));
+            }
+
                 break;
 
             // List Blobs
@@ -91,7 +121,23 @@ public class Quickstart {
             // Download a blob to local path
             case "G":
                 System.out.println("Get(Download) the blob: " + blobClient.getBlobUrl());
-                blobClient.downloadToFile(downloadedFilePath);
+                String name=blobContainerClient.getBlobContainerName();
+                File download = new File("download", name);
+                download.mkdirs();
+                long start=System.currentTimeMillis();
+                blobContainerClient.listBlobs()
+                        .forEach(
+                                blobItem ->{
+                                    System.out.println("This is the blob name: " + blobItem.getName());
+                                    BlobClient theBlobClient = blobContainerClient.getBlobClient(blobItem.getName());
+                                    String downloadPath = new File(download, blobItem.getName()).getAbsolutePath();
+                                    theBlobClient.downloadToFile(downloadPath);
+                                    System.out.println("Downloaded: "+downloadPath);
+
+                                }
+
+                                );
+                System.out.println("Downloaded to: "+download+" "+(System.currentTimeMillis()-start) );
                 break;
 
             // Delete a blob
@@ -105,7 +151,7 @@ public class Quickstart {
             case "E":
                 File downloadFile = new File(downloadedFilePath);
                 System.out.println("Cleaning up the sample and exiting.");
-                blobContainerClient.delete();
+
                 downloadFile.delete();
                 System.exit(0);
                 break;
@@ -113,6 +159,21 @@ public class Quickstart {
             default:
                 break;
             }
+        }
+    }
+
+    private static void uploadFilePath(File source, BlobContainerClient blobContainerClient)
+    {
+        if(source.isFile())
+        {
+            System.out.println("Uploading: "+source);
+            BlobClient blobC = blobContainerClient.getBlobClient(source.getName());
+            blobC.uploadFromFile(source.toPath().toString());
+        }
+        else
+        {
+            File[] files = source.listFiles();
+            Arrays.asList(files).forEach(file->uploadFilePath(file, blobContainerClient));
         }
     }
 }
